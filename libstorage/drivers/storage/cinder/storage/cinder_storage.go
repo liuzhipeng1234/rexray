@@ -7,6 +7,8 @@ import (
 	"io/ioutil"
 	"net/http"
 	"time"
+	"fmt"
+	"os"
 
 	gofig "github.com/akutz/gofig/types"
 	"github.com/akutz/goof"
@@ -333,6 +335,18 @@ func translateVolume(
 				DeviceName: attachment.Device,
 				Status:     "",
 			}
+			// start, replace device name with /dev/disk/by-id/virtio-<volume_id>
+			fields := eff(goof.Fields{
+				"volumeId": attachment.VolumeID,
+			})
+
+			dn, err := getDeviceNameById(attachment.VolumeID)
+			if err != nil {
+				goof.WithFieldsE(fields, "driver.GetVolume: couldn't get device name by id, falling back to value from openstack", err)
+			} else {
+				libstorageAttachment.DeviceName = dn
+			}
+			//end
 			attachments = append(attachments, libstorageAttachment)
 		}
 	}
@@ -893,4 +907,13 @@ func (d *driver) caCert() string {
 
 func (d *driver) insecure() bool {
 	return d.config.GetBool(cinder.ConfigInsecure)
+}
+
+func getDeviceNameById(volumeID string) (string, error) {
+	deviceName := fmt.Sprintf("/dev/disk/by-id/virtio-%s", volumeID[:20])
+	_, err := os.Stat(deviceName)
+	if os.IsNotExist(err) {
+		return "", err
+	}
+	return deviceName, nil
 }
